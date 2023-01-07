@@ -1,0 +1,97 @@
+
+loading the libraries that will be used in the project
+```{r, echo=FALSE}
+library(caret)
+library(plyr)
+library(dplyr)
+library(C50)
+library(mlbench)
+
+```
+
+Reading the train and test dataset
+```{r, echo=FALSE}
+trainingOrigin<-read.csv("pml-training.csv")
+testingOrigin<-read.csv("pml-testing.csv")
+
+```
+
+dealing with the train data. Spliting the train data into test and train
+```{r, echo=FALSE}
+set.seed(20497)
+inTrain<-createDataPartition(y=trainingOrigin$classe,p=0.70,list=FALSE)
+training<-trainingOrigin[inTrain,]
+testing<-trainingOrigin[-inTrain,]
+```
+
+## Data Processing
+Checking the null variables and dealing with the null variables
+```{r, echo=FALSE}
+na_columns <- names(training[,colSums(is.na(training)) > 0])
+length(na_columns)
+
+columns_to_remove_1 <-
+  grep("avg|var|stddev|max|min|amplitude|kurtosis|skewness",
+       names(training))
+length(columns_to_remove_1)
+
+```
+
+Creating the clean training dataset that will be used onwards
+```{r, echo=FALSE}
+training_1 <- training[,!names(training) %in% c("V1","user_name",
+                                                "raw_timestamp_part_1",
+                                                "raw_timestamp_part_2","cvtd_timestamp",
+                                                "new_window", "num_window",
+                                                names(training[,columns_to_remove_1]))]
+dim(training_1)
+
+ncol(training_1)
+```
+
+removing the index column and applying cross validation
+```{r, echo=FALSE}
+forSizes <- c(1:10, 15, 20, 25, 30, 35, 40, 50, 52)
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+training_1 <- training_1[ , -1]
+control <- trainControl(method="cv", number=10)
+```
+
+using different models to train the dataset to allow selection of the best model.
+```{r, echo=FALSE}
+set.seed(12345)
+ctmodFit<-train(classe~.,data=training_1,method="rpart",trControl=control)
+
+set.seed(12345)
+rfmodFit<-train(classe~.,data=training_1,method="rf",PROX=TRUE, trControl=control)
+
+set.seed(12345)
+bomodFit<-train(classe~.,data=training_1,method="gbm", trControl=control,verbose=FALSE)
+
+set.seed(12345)
+c5modFit<-train(classe~.,data=training_1,method="C5.0", trControl=control,verbose=FALSE)
+
+```
+
+resampling the models and produce summary with the plot representation
+```{r, echo=FALSE}
+results<-resamples(list(RPART=ctmodFit, RF=rfmodFit, GBM=bomodFit, C5=c5modFit))
+summary(results)
+
+topresults<-resamples(list(RF=rfmodFit, GBM=bomodFit, C5=c5modFit))
+bwplot(topresults)
+
+```
+
+fitting the best model which is C5 and make the prediction required for the 20 samples.
+```{r, echo=FALSE}
+c5Grid<-expand.grid(trials=20, model="rules", winnow=TRUE)
+c5modFitFull<-train(classe ~ ., data=training_1, method="C5.0", verbose=FALSE, tuneGrid=c5Grid)
+
+
+c5predictOriginTest<-predict(c5modFitFull,testingOrigin)
+c5predictOriginTest
+
+```
+
+
